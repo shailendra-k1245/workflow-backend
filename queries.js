@@ -13,20 +13,27 @@ const cron = require("node-cron")
 const key = "e5b78779c53ded533dbd9023f6c74286"
 const axios = require("axios")
 let currentState = ""
-let idxWorkflow = 1
-// const token = ""
-
 let nodeProgress = true
+let idxWorkflow = 1
 
 let userStatus = "new"
 let phoneNumber = ""
 let customerCategory = ""
 
+// const token = ""
+
+let userInfo = []
 
 
 let methods = {
     onStart: function () { console.log("Started") }
 }
+
+var tempWorkflow = new StateMachine({
+    init: "start",
+    transitions: [],
+    methods
+})
 
 const sleep = (time) => {
     return new Promise((resolve) => setTimeout(function () {
@@ -77,19 +84,56 @@ const addWorkflow = (request, response) => {
     )
 }
 
-var tempWorkflow = new StateMachine({
-    init: "start",
-    transitions: [],
-    methods
-})
-
 const runWorkflowByOrder = async (request, response) => {
-    let { nodesOrder } = request.body
-    let c = 0
+    let { username, idx, nodes, edges, workflowname } = request.body
+    request.session.name = username
+    request.session.workflow = workflowname
+    request.session.idx = idx
+
+    //
+
+    
+    let nodesOrder = getNodesOrder(nodes, edges)
+
+    let userinfo = []
+    // check if the user is present in the table
+    pool.query(`SELECT * FROM userinfo WHERE username = ${username} `, (err, results) => {
+        if (err) {
+            // throw err;
+            // user not present in the table
+            // insert the user
+            // console.log(err)
+            idxWorkflow = 1
+
+        } else {
+            userinfo = results.rows[0];
+            idxWorkflow = userinfo.workflows.idx
+            nodeProgress = true
+        }
+    })
+
+    if (userinfo.length === 0) {
+        let workflow = JSON.stringify({ nodes, edges, idx })
+        pool.query(`INSERT INTO userinfo (username,workflows) values ($1,$2)`, [username, workflow], (err, results) => {
+            if (err) {
+                console.log(err)
+            }
+            nodeProgress = true
+        })
+    }
 
     cron.schedule("*/10 * * * * *", async () => {
-        console.log("running cron every 10 second")
+        console.log("running cron every 10 second", nodeProgress, idxWorkflow, userInfo)
+
         for (idxWorkflow; idxWorkflow < nodesOrder.length; idxWorkflow++) {
+            // let workflow = JSON.stringify({ nodes, edges, idx: idxWorkflow })
+            // pool.query(`UPDATE userinfo SET workflows = ${workflow} WHERE username = ${username}`, (err, results) => {
+            //     if (err) {
+            //         console.log(err)
+            //     } else {
+            //         console.log(results.rows[0])
+            //     }
+            // })
             await sleep(2000)
             if (idxWorkflow === 1) {
                 console.log("api started")
@@ -145,11 +189,60 @@ const runWorkflowByOrder = async (request, response) => {
                 // template failed
                 console.log("end of workflow")
             }
+
         }
+
     })
 
     response.json({ message: "Engine started" })
 }
+
+
+
+const getNodesOrder = (n, e) => {
+    // console.log(nodes, edges)
+    let nodes = n
+    let edges = e
+    let nodesOrder = []
+
+    for (let i = 0; i < edges.length; i++) {
+        for (let j = 0; j < nodes.length; j++) {
+            if (edges[i].target === nodes[j].id && !nodes[j].isAdded) {
+                const payload = {
+                    id: nodes[j].id,
+                    type: nodes[j].type,
+                    data: nodes[j].data,
+                    status: ""
+                }
+                nodesOrder.push(payload)
+                nodes[j].isAdded = true
+            }
+        }
+
+        if (i === edges.length - 1) {
+            for (let k = 0; k < nodes.length; k++) {
+                if (edges[i].source === nodes[k].id && !nodes[k].isAdded) {
+                    const payload = {
+                        id: nodes[k].id,
+                        type: nodes[k].type,
+                        data: nodes[k].data,
+                        status: ""
+                    }
+                    nodesOrder.push(payload)
+                    nodes[k].isAdded = true
+                }
+            }
+        }
+
+    }
+    return nodesOrder
+}
+
+// const runWorkflowByOrder = (request, response) => {
+//     let { nodes, edges } = request.body
+//     getNodesOrder(nodes, edges)
+// }
+
 
 const playPauseWorkflow = (request, response) => {
     const action = request.body
@@ -191,7 +284,12 @@ const setCategory = (request, response) => {
     response.send({ data: "category set" })
 }
 
+const getSessionName = (request, response) => {
+    let name = request.session.name
+    response.json({ name })
+}
+
 module.exports = {
     getAllWorkflows, addWorkflow, getWorkflowById, runWorkflowByOrder, playPauseWorkflow, setUserStatus
-    , setPhoneNumber, setCategory
+    , setPhoneNumber, setCategory, getSessionName
 }
