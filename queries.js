@@ -90,29 +90,37 @@ const runWorkflowByOrder = async (request, response) => {
     request.session.workflow = workflowname
     request.session.idx = idx
 
-    //
 
-    
+    // console.log(request.session)
+    //check if the session exist or not
+
+
     let nodesOrder = getNodesOrder(nodes, edges)
 
     let userinfo = []
     // check if the user is present in the table
-    pool.query(`SELECT * FROM userinfo WHERE username = ${username} `, (err, results) => {
+
+    let query = "select * from userinfo where username = " + "'" + username + "'"
+    pool.query(query, (err, results) => {
         if (err) {
-            // throw err;
+            idxWorkflow = 1;
+            console.log(err)
             // user not present in the table
             // insert the user
             // console.log(err)
-            idxWorkflow = 1
 
-        } else {
+        } else if (userinfo.length > 0) {
             userinfo = results.rows[0];
+            console.log(results.rows[0], "userinfo")
+
             idxWorkflow = userinfo.workflows.idx
+            //take index from session table
             nodeProgress = true
         }
     })
 
     if (userinfo.length === 0) {
+
         let workflow = JSON.stringify({ nodes, edges, idx })
         pool.query(`INSERT INTO userinfo (username,workflows) values ($1,$2)`, [username, workflow], (err, results) => {
             if (err) {
@@ -122,18 +130,19 @@ const runWorkflowByOrder = async (request, response) => {
         })
     }
 
+    // console.log("userinfo", userinfo);
+
     cron.schedule("*/10 * * * * *", async () => {
         console.log("running cron every 10 second", nodeProgress, idxWorkflow, userInfo)
 
         for (idxWorkflow; idxWorkflow < nodesOrder.length; idxWorkflow++) {
-            // let workflow = JSON.stringify({ nodes, edges, idx: idxWorkflow })
-            // pool.query(`UPDATE userinfo SET workflows = ${workflow} WHERE username = ${username}`, (err, results) => {
-            //     if (err) {
-            //         console.log(err)
-            //     } else {
-            //         console.log(results.rows[0])
-            //     }
-            // })
+            let workflow = JSON.stringify({ nodes, edges, idx: idxWorkflow })
+            let query = "UPDATE userinfo SET workflows =" + "'" + workflow + "'" + "WHERE username =" + "'" + username + "'"
+            pool.query(query, (err, results) => {
+                if (err) {
+                    console.log(err)
+                }
+            })
             await sleep(2000)
             if (idxWorkflow === 1) {
                 console.log("api started")
