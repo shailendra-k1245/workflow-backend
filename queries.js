@@ -16,13 +16,14 @@ let currentState = ""
 let nodeProgress = true
 let idxWorkflow = 1
 
-let userStatus = "new"
+let userStatus = ""
 let phoneNumber = ""
 let customerCategory = ""
 
+
 // const token = ""
 
-let userInfo = []
+
 
 
 let methods = {
@@ -90,14 +91,12 @@ const runWorkflowByOrder = async (request, response) => {
     request.session.workflow = workflowname
     request.session.idx = idx
 
-
-    // console.log(request.session)
     //check if the session exist or not
-
+    let userinfo = []
 
     let nodesOrder = getNodesOrder(nodes, edges)
-
-    let userinfo = []
+    // console.log(JSON.stringify(nodesOrder))
+    
     // check if the user is present in the table
 
     let query = "select * from userinfo where username = " + "'" + username + "'"
@@ -109,13 +108,18 @@ const runWorkflowByOrder = async (request, response) => {
             // insert the user
             // console.log(err)
 
-        } else if (userinfo.length > 0) {
-            userinfo = results.rows[0];
-            console.log(results.rows[0], "userinfo")
-
-            idxWorkflow = userinfo.workflows.idx
+        } else {
+            userinfo = results.rows
+            console.log("userinfo", userinfo, typeof userinfo)
+            if (userinfo.length === 0) {
+                idxWorkflow = 1
+                nodeProgress = true
+            } else {
+                idxWorkflow = userinfo[0].workflows.idx
+                nodeProgress = true
+            }
             //take index from session table
-            nodeProgress = true
+
         }
     })
 
@@ -130,13 +134,13 @@ const runWorkflowByOrder = async (request, response) => {
         })
     }
 
-    // console.log("userinfo", userinfo);
 
     cron.schedule("*/10 * * * * *", async () => {
-        console.log("running cron every 10 second", nodeProgress, idxWorkflow, userInfo)
+        console.log("running cron every 10 second", nodeProgress, idxWorkflow, userinfo)
 
         for (idxWorkflow; idxWorkflow < nodesOrder.length; idxWorkflow++) {
             let workflow = JSON.stringify({ nodes, edges, idx: idxWorkflow })
+
             let query = "UPDATE userinfo SET workflows =" + "'" + workflow + "'" + "WHERE username =" + "'" + username + "'"
             pool.query(query, (err, results) => {
                 if (err) {
