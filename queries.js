@@ -6,6 +6,7 @@ const pool = new Pool({
     password: "postgrey",
     port: 5432
 })
+const CronJob = require('cron').CronJob;
 
 
 const StateMachine = require("javascript-state-machine")
@@ -14,17 +15,11 @@ const key = "e5b78779c53ded533dbd9023f6c74286"
 const axios = require("axios")
 let currentState = ""
 let nodeProgress = true
-let idxWorkflow = 1
-
-let userStatus = ""
-let phoneNumber = ""
-let customerCategory = ""
-
-
-// const token = ""
-
-
-
+let selectedCategory = ""
+let userMobileNumber = ""
+// let userinfo = []
+let taskArr = []
+let task
 
 let methods = {
     onStart: function () { console.log("Started") }
@@ -86,93 +81,96 @@ const addWorkflow = (request, response) => {
 }
 
 const runWorkflowByOrder = async (request, response) => {
-    let { username, idx, nodes, edges, workflowname } = request.body
-    request.session.name = username
-    request.session.workflow = workflowname
-    request.session.idx = idx
+    const { username, idx, nodes, edges, workflowname } = request.body
 
-    //check if the session exist or not
+    let idxWorkflow = 1;
+    let userStatus = ""
+    userMobileNumber = ""
+    selectedCategory = ""
     let userinfo = []
-
     let nodesOrder = getNodesOrder(nodes, edges)
-    // console.log(JSON.stringify(nodesOrder))
-    
+
     // check if the user is present in the table
 
-    let query = "select * from userinfo where username = " + "'" + username + "'"
-    pool.query(query, (err, results) => {
+    let query = "select * from userinfo where username =" + "'" + username + "'"
+    await pool.query(query, (err, results) => {
         if (err) {
             idxWorkflow = 1;
-            console.log(err)
+            throw err
             // user not present in the table
             // insert the user
-            // console.log(err)
-
         } else {
             userinfo = results.rows
-            console.log("userinfo", userinfo, typeof userinfo)
             if (userinfo.length === 0) {
+                userStatus = "new"
                 idxWorkflow = 1
                 nodeProgress = true
-            } else {
+                console.log("inserted new value");
+                let workflow = JSON.stringify({ nodes, edges, idx })
+                pool.query(`INSERT INTO userinfo (username,workflows) values ($1,$2)`, [username, workflow], (err, results) => {
+                    if (err) {
+                        console.log(err)
+                    }
+                    nodeProgress = true
+                })
+            } else if (userinfo.length > 0) {
+
                 idxWorkflow = userinfo[0].workflows.idx
                 nodeProgress = true
+                userMobileNumber = userinfo[0].usermobilenumber
+                selectedCategory = userinfo[0].selectedcategory
+                if (userMobileNumber !== null || userMobileNumber !== "") {
+                    userStatus = "old"
+                }
             }
-            //take index from session table
-
         }
     })
 
-    if (userinfo.length === 0) {
-
-        let workflow = JSON.stringify({ nodes, edges, idx })
-        pool.query(`INSERT INTO userinfo (username,workflows) values ($1,$2)`, [username, workflow], (err, results) => {
-            if (err) {
-                console.log(err)
-            }
-            nodeProgress = true
-        })
+    if (taskArr.length > 0) {
+        task.stop()
     }
 
+    task = cron.schedule("*/8 * * * * *", async () => {
+        console.log("running cron every 8 second", nodeProgress, idxWorkflow, username, userStatus)
 
-    cron.schedule("*/10 * * * * *", async () => {
-        console.log("running cron every 10 second", nodeProgress, idxWorkflow, userinfo)
-
-        for (idxWorkflow; idxWorkflow < nodesOrder.length; idxWorkflow++) {
-            let workflow = JSON.stringify({ nodes, edges, idx: idxWorkflow })
+        for (idxWorkflow; idxWorkflow <= nodesOrder.length; nodeProgress ? idxWorkflow++ : idxWorkflow) {
+            await sleep(2000)
+            let workflow = JSON.stringify({ nodes, edges, idx: idxWorkflow - 1 })
 
             let query = "UPDATE userinfo SET workflows =" + "'" + workflow + "'" + "WHERE username =" + "'" + username + "'"
-            pool.query(query, (err, results) => {
+            await pool.query(query, (err, results) => {
                 if (err) {
                     console.log(err)
                 }
             })
-            await sleep(2000)
+
+
             if (idxWorkflow === 1) {
-                console.log("api started")
+                console.log("api started", username)
             } else if (idxWorkflow === 2) {
-                console.log("condition started")
-                console.log("checking user status")
-                nodeProgress = false
+                console.log("condition started", username)
+                console.log("checking user status", username)
+
                 // wait for user status api
             } else if (idxWorkflow === 3) {
                 // api failed
+
             } else if (idxWorkflow === 4) {
                 // new user text node
                 if (userStatus === "new") {
-                    console.log('new user')
+                    console.log("Welcome to our platform 😃", username)
                     nodeProgress = true
                 }
             } else if (idxWorkflow === 5) {
                 // existing user text node
                 if (userStatus === 'old') {
-                    console.log('old user')
+                    console.log('Welcome back, existing user', username)
                     nodeProgress = true
                 }
             } else if (idxWorkflow === 6) {
                 // ask for phone number
-                if (userStatus === "new") {
-                    console.log("please provide phone number...")
+                if (userMobileNumber === "" || userMobileNumber === null) {
+                    console.log("please provide phone number...", username)
                     nodeProgress = false
                 } else {
                     nodeProgress = true
@@ -180,24 +178,33 @@ const runWorkflowByOrder = async (request, response) => {
                 // wait for customer
             } else if (idxWorkflow === 7) {
                 // send category 
-                console.log("Please chose either vegetable or medicine")
-                //give request in small cap
-                nodeProgress = false
+                if (selectedCategory === "" || selectedCategory === null) {
+                    console.log("Please chose either vegetable or medicine", username)
+                    nodeProgress = false
+                } else {
+                    nodeProgress = true
+                }
+                console.log(selectedCategory);
                 // wait for customer to click
             } else if (idxWorkflow === 8) {
                 // condition check for customer click 
-                nodeProgress = true
-                if (customerCategory === "vegetable") {
+                console.log(selectedCategory);
+                if (selectedCategory === "vegetable") {
                     console.log("Vegetable list : \n 1. Potato \n 2. Tomato \n 3. Onion")
-                } else if (customerCategory === "medicine") {
+                    nodeProgress = true
+                } else if (selectedCategory === "medicine") {
                     console.log("Medicine list : \n 1. Paracetamol \n 2. Serodon \n 3. Disprin")
+                    nodeProgress = true
                 }
             } else if (idxWorkflow === 9) {
                 // template failed
+                nodeProgress = true
             } else if (idxWorkflow === 10) {
                 // send vegetable acc to customer
+                nodeProgress = true
             } else if (idxWorkflow === 11) {
                 // send medicines acc to customer
+                nodeProgress = true
             } else if (idxWorkflow === 12) {
                 // template failed
                 console.log("end of workflow")
@@ -207,10 +214,44 @@ const runWorkflowByOrder = async (request, response) => {
 
     })
 
+    taskArr.push(task)
+    console.log("taskArr", task);
+    // if (nodeProgress === false || idxWorkflow >= 12) {
+    //     task.stop()
+    // } else if (nodeProgress === true) {
+    //     task.start()
+    // }
+
     response.json({ message: "Engine started" })
 }
 
+const testCron = (request, response) => {
+    const obj = request.body
+    const runTask = () => {
+        console.log("task runiing", obj);
+    }
+    let cronTime = "* * * * * *"
+    const job = new CronJob({
+        cronTime,
+        onTick: async () => {
+            if (job.taskRunning) {
+                return
+            }
 
+            job.taskRunning = true
+            try {
+                await runTask()
+            } catch (err) {
+                // Handle error
+            }
+            job.taskRunning = false
+        },
+        start: true,
+        timeZone: 'UTC'
+    })
+
+    response.json({ msg: "cron started" })
+}
 
 const getNodesOrder = (n, e) => {
     // console.log(nodes, edges)
@@ -251,50 +292,43 @@ const getNodesOrder = (n, e) => {
     return nodesOrder
 }
 
-// const runWorkflowByOrder = (request, response) => {
-//     let { nodes, edges } = request.body
-//     getNodesOrder(nodes, edges)
-// }
-
-
-const playPauseWorkflow = (request, response) => {
-    const action = request.body
-    // console.log(action, action.action)
-    if (action.action === "play") {
-        nodeProgress = true
-    } else if (action.action === "pause") {
-        nodeProgress = false
-    }
-    response.send({ data: "action sent" })
-}
-
-const setUserStatus = (request, response) => {
-    const { user } = request.body
-    userStatus = user
-    nodeProgress = true
-    console.log("user status: ", user)
-    response.send({ data: "user set" })
-}
-
 const setPhoneNumber = (request, response) => {
-    const { number } = request.body
-    phoneNumber = number
-    // console.log("phone:", phoneNumber)
-    if (phoneNumber.length === 10) {
-        nodeProgress = true
-        console.log("phone number set as:", phoneNumber)
+    const { usermobilenumber, username } = request.body
+
+    if (usermobilenumber.length === 10) {
+        // nodeProgress = true
+        //insert in db
+        let query = "UPDATE userinfo SET usermobilenumber =" + "'" + usermobilenumber + "'" + "WHERE username =" + "'" + username + "'" + "RETURNING usermobilenumber"
+        pool.query(query, (err, results) => {
+            if (err) {
+                throw err
+            } else {
+                console.log("result mob:", results.rows[0]);
+                userMobileNumber = results.rows[0].usermobilenumber
+                nodeProgress = true
+            }
+        })
+        console.log("phone number set as:", usermobilenumber)
+
     } else {
         console.log("invalid number ")
     }
     response.send({ data: "number set" })
 }
 
-const setCategory = (request, response) => {
-    const { category } = request.body
-    customerCategory = category
-    console.log("category:", category)
-    nodeProgress = true
-    response.send({ data: "category set" })
+const setCategory = async (request, response) => {
+    const { selectedcategory, username } = request.body
+    let query = "UPDATE userinfo SET selectedcategory =" + "'" + selectedcategory + "'" + "WHERE username =" + "'" + username + "'" + "RETURNING selectedcategory"
+    await pool.query(query, (err, results) => {
+        if (err) {
+            throw err
+        } else {
+            console.log("set", results.rows[0])
+            selectedCategory = results.rows[0].selectedcategory
+            nodeProgress = true
+            response.send({ data: "category set" })
+        }
+    })
 }
 
 const getSessionName = (request, response) => {
@@ -303,6 +337,6 @@ const getSessionName = (request, response) => {
 }
 
 module.exports = {
-    getAllWorkflows, addWorkflow, getWorkflowById, runWorkflowByOrder, playPauseWorkflow, setUserStatus
-    , setPhoneNumber, setCategory, getSessionName
+    getAllWorkflows, addWorkflow, getWorkflowById, runWorkflowByOrder
+    , setPhoneNumber, setCategory, getSessionName, testCron
 }
