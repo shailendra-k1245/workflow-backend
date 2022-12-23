@@ -97,8 +97,7 @@ const runWorkflowByOrder = async (request, response) => {
         if (err) {
             idxWorkflow = 1;
             throw err
-            // user not present in the table
-            // insert the user
+
         } else {
             userinfo = results.rows
             if (userinfo.length === 0) {
@@ -130,8 +129,18 @@ const runWorkflowByOrder = async (request, response) => {
         task.stop()
     }
 
-    task = cron.schedule("*/8 * * * * *", async () => {
-        console.log("running cron every 8 second", nodeProgress, idxWorkflow, username, userStatus)
+    let timeCounter = 0;
+
+    task = cron.schedule("*/6 * * * * *", async () => {
+        console.log("running cron every 6 second", nodeProgress, idxWorkflow, username, userStatus)
+        timeCounter += 6
+
+        if (timeCounter % 60 === 0 && idxWorkflow === 6) {
+            console.log("Please provide phone number...", username);
+        }
+        if (timeCounter % 60 === 0 && idxWorkflow === 7) {
+            console.log("Please chose either vegetable or medicine", username);
+        }
 
         for (idxWorkflow; idxWorkflow <= nodesOrder.length; nodeProgress ? idxWorkflow++ : idxWorkflow) {
             await sleep(2000)
@@ -170,9 +179,10 @@ const runWorkflowByOrder = async (request, response) => {
             } else if (idxWorkflow === 6) {
                 // ask for phone number
                 if (userMobileNumber === "" || userMobileNumber === null) {
-                    console.log("please provide phone number...", username)
+                    console.log("Please provide phone number...", username)
                     nodeProgress = false
-                } else {
+                }
+                else {
                     nodeProgress = true
                 }
                 // wait for customer
@@ -184,7 +194,7 @@ const runWorkflowByOrder = async (request, response) => {
                 } else {
                     nodeProgress = true
                 }
-                console.log(selectedCategory);
+
                 // wait for customer to click
             } else if (idxWorkflow === 8) {
                 // condition check for customer click 
@@ -214,15 +224,11 @@ const runWorkflowByOrder = async (request, response) => {
 
     })
 
-    taskArr.push(task)
-    console.log("taskArr", task);
-    // if (nodeProgress === false || idxWorkflow >= 12) {
-    //     task.stop()
-    // } else if (nodeProgress === true) {
-    //     task.start()
-    // }
 
-    response.json({ message: "Engine started" })
+    taskArr.push(task)
+    console.log("idxWorkflow", idxWorkflow);
+
+    response.json({ message: "Workflow started" })
 }
 
 const testCron = (request, response) => {
@@ -295,7 +301,7 @@ const getNodesOrder = (n, e) => {
 const setPhoneNumber = (request, response) => {
     const { usermobilenumber, username } = request.body
 
-    if (usermobilenumber.length === 10) {
+    if (usermobilenumber.length === 10 && isNaN(+userMobileNumber) !== true) {
         // nodeProgress = true
         //insert in db
         let query = "UPDATE userinfo SET usermobilenumber =" + "'" + usermobilenumber + "'" + "WHERE username =" + "'" + username + "'" + "RETURNING usermobilenumber"
@@ -309,34 +315,41 @@ const setPhoneNumber = (request, response) => {
             }
         })
         console.log("phone number set as:", usermobilenumber)
+        response.send({ data: "number set" })
 
     } else {
-        console.log("invalid number ")
+        console.log("please provide a valid number")
+        response.send({ data: "invalid number" })
     }
-    response.send({ data: "number set" })
 }
 
 const setCategory = async (request, response) => {
     const { selectedcategory, username } = request.body
-    let query = "UPDATE userinfo SET selectedcategory =" + "'" + selectedcategory + "'" + "WHERE username =" + "'" + username + "'" + "RETURNING selectedcategory"
-    await pool.query(query, (err, results) => {
-        if (err) {
-            throw err
-        } else {
-            console.log("set", results.rows[0])
-            selectedCategory = results.rows[0].selectedcategory
-            nodeProgress = true
-            response.send({ data: "category set" })
-        }
-    })
+    if (selectedcategory === "vegetable" || selectedcategory === "medicine") {
+
+        let query = "UPDATE userinfo SET selectedcategory =" + "'" + selectedcategory + "'" + "WHERE username =" + "'" + username + "'" + "RETURNING selectedcategory"
+        await pool.query(query, (err, results) => {
+            if (err) {
+                throw err
+            } else {
+                console.log("set", results.rows[0])
+                selectedCategory = results.rows[0].selectedcategory
+                nodeProgress = true
+                response.send({ data: "category set" })
+            }
+        })
+    } else {
+        console.log("please provide valid product category name")
+        response.send({ data: "invalid category" })
+    }
 }
 
-const getSessionName = (request, response) => {
-    let name = request.session.name
-    response.json({ name })
+const abortWorkflow = (request, response) => {
+    task.stop()
+    response.json({ msg: "workflow stopped" })
 }
 
 module.exports = {
     getAllWorkflows, addWorkflow, getWorkflowById, runWorkflowByOrder
-    , setPhoneNumber, setCategory, getSessionName, testCron
+    , setPhoneNumber, setCategory, testCron, abortWorkflow
 }
