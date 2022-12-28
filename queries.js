@@ -19,6 +19,7 @@ let selectedCategory = ""
 let userMobileNumber = ""
 // let userinfo = []
 let taskArr = []
+let messageQue = []
 let task
 
 let methods = {
@@ -82,7 +83,7 @@ const addWorkflow = (request, response) => {
 
 const runWorkflowByOrder = async (request, response) => {
     const { username, idx, nodes, edges, workflowname } = request.body
-
+    //take workflow id as 28
     let idxWorkflow = 1;
     let userStatus = ""
     userMobileNumber = ""
@@ -106,12 +107,7 @@ const runWorkflowByOrder = async (request, response) => {
                 nodeProgress = true
                 console.log("inserted new value");
                 let workflow = JSON.stringify({ nodes, edges, idx })
-                pool.query(`INSERT INTO userinfo (username,workflows) values ($1,$2)`, [username, workflow], (err, results) => {
-                    if (err) {
-                        console.log(err)
-                    }
-                    nodeProgress = true
-                })
+                insertNewUser(username, workflow)
             } else if (userinfo.length > 0) {
 
                 idxWorkflow = userinfo[0].workflows.idx
@@ -145,15 +141,7 @@ const runWorkflowByOrder = async (request, response) => {
         for (idxWorkflow; idxWorkflow <= nodesOrder.length; nodeProgress ? idxWorkflow++ : idxWorkflow) {
             await sleep(2000)
             let workflow = JSON.stringify({ nodes, edges, idx: idxWorkflow - 1 })
-
-            let query = "UPDATE userinfo SET workflows =" + "'" + workflow + "'" + "WHERE username =" + "'" + username + "'"
-            await pool.query(query, (err, results) => {
-                if (err) {
-                    console.log(err)
-                }
-            })
-
-
+            updateUser(username, workflow)
             if (idxWorkflow === 1) {
                 console.log("api started", username)
             } else if (idxWorkflow === 2) {
@@ -224,40 +212,12 @@ const runWorkflowByOrder = async (request, response) => {
 
     })
 
-
     taskArr.push(task)
     console.log("idxWorkflow", idxWorkflow);
 
     response.json({ message: "Workflow started" })
 }
 
-const testCron = (request, response) => {
-    const obj = request.body
-    const runTask = () => {
-        console.log("task runiing", obj);
-    }
-    let cronTime = "* * * * * *"
-    const job = new CronJob({
-        cronTime,
-        onTick: async () => {
-            if (job.taskRunning) {
-                return
-            }
-
-            job.taskRunning = true
-            try {
-                await runTask()
-            } catch (err) {
-                // Handle error
-            }
-            job.taskRunning = false
-        },
-        start: true,
-        timeZone: 'UTC'
-    })
-
-    response.json({ msg: "cron started" })
-}
 
 const getNodesOrder = (n, e) => {
     // console.log(nodes, edges)
@@ -298,51 +258,64 @@ const getNodesOrder = (n, e) => {
     return nodesOrder
 }
 
-const setPhoneNumber = (request, response) => {
-    const { usermobilenumber, username } = request.body
-
-    if (usermobilenumber.length === 10 && isNaN(+userMobileNumber) !== true) {
-        // nodeProgress = true
-        //insert in db
-        let query = "UPDATE userinfo SET usermobilenumber =" + "'" + usermobilenumber + "'" + "WHERE username =" + "'" + username + "'" + "RETURNING usermobilenumber"
-        pool.query(query, (err, results) => {
-            if (err) {
-                throw err
-            } else {
-                console.log("result mob:", results.rows[0]);
-                userMobileNumber = results.rows[0].usermobilenumber
-                nodeProgress = true
-            }
-        })
-        console.log("phone number set as:", usermobilenumber)
-        response.send({ data: "number set" })
-
-    } else {
-        console.log("please provide a valid number")
-        response.send({ data: "invalid number" })
-    }
+const insertNewUser = (username, workflow) => {
+    pool.query(`INSERT INTO userinfo (username,workflows) values ($1,$2)`, [username, workflow], (err, results) => {
+        if (err) {
+            console.log(err)
+        }
+        nodeProgress = true
+    })
 }
 
-const setCategory = async (request, response) => {
-    const { selectedcategory, username } = request.body
-    if (selectedcategory === "vegetable" || selectedcategory === "medicine") {
-
-        let query = "UPDATE userinfo SET selectedcategory =" + "'" + selectedcategory + "'" + "WHERE username =" + "'" + username + "'" + "RETURNING selectedcategory"
-        await pool.query(query, (err, results) => {
-            if (err) {
-                throw err
-            } else {
-                console.log("set", results.rows[0])
-                selectedCategory = results.rows[0].selectedcategory
-                nodeProgress = true
-                response.send({ data: "category set" })
-            }
-        })
-    } else {
-        console.log("please provide valid product category name")
-        response.send({ data: "invalid category" })
-    }
+const updateUser = (username, workflow) => {
+    let query = "UPDATE userinfo SET workflows =" + "'" + workflow + "'" + "WHERE username =" + "'" + username + "'"
+    pool.query(query, (err, results) => {
+        if (err) {
+            console.log(err)
+        }
+    })
 }
+
+const takeUserInput = (request, response) => {
+    const { username, payload } = request.body
+
+    messageQue.push({ username, payload })
+    
+
+    if (payload === "vegetable" || payload === "medicine") {
+        insertCategory(payload, username)
+    } else if (payload.length === 10 && isNaN(+payload) === false) {
+        insertMobileNumber(payload, username)
+    }
+    response.json({ msg: "message received" })
+}
+
+const insertMobileNumber = (mobileNumber, username) => {
+    let query = "UPDATE userinfo SET usermobilenumber =" + "'" + mobileNumber + "'" + "WHERE username =" + "'" + username + "'" + "RETURNING usermobilenumber"
+    pool.query(query, (err, results) => {
+        if (err) {
+            throw err
+        } else {
+            console.log("result mob:", results.rows[0]);
+            userMobileNumber = results.rows[0].usermobilenumber
+            nodeProgress = true
+        }
+    })
+}
+
+const insertCategory = (category, username) => {
+    let query = "UPDATE userinfo SET selectedcategory =" + "'" + category + "'" + "WHERE username =" + "'" + username + "'" + "RETURNING selectedcategory"
+    pool.query(query, (err, results) => {
+        if (err) {
+            throw err
+        } else {
+            console.log("set", results.rows[0])
+            selectedCategory = results.rows[0].selectedcategory
+            nodeProgress = true
+        }
+    })
+}
+
 
 const abortWorkflow = (request, response) => {
     task.stop()
@@ -351,5 +324,5 @@ const abortWorkflow = (request, response) => {
 
 module.exports = {
     getAllWorkflows, addWorkflow, getWorkflowById, runWorkflowByOrder
-    , setPhoneNumber, setCategory, testCron, abortWorkflow
+    , abortWorkflow, takeUserInput
 }
