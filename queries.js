@@ -267,6 +267,16 @@ const insertNewUser = (username, workflow) => {
     })
 }
 
+const checkUser = (username) => {
+    let query = "select * from userinfo where username =" + "'" + username + "'"
+    pool.query(query, (err, results) => {
+        if (err) {
+            throw err
+        }
+        console.log(results.rows)
+    })
+}
+
 const updateUser = (username, workflow) => {
     let query = "UPDATE userinfo SET workflows =" + "'" + workflow + "'" + "WHERE username =" + "'" + username + "'"
     pool.query(query, (err, results) => {
@@ -278,17 +288,126 @@ const updateUser = (username, workflow) => {
 
 const takeUserInput = (request, response) => {
     const { username, payload } = request.body
+    let idx
+    let task
+    let taskArr = []
+    let userResult = []
+
 
     messageQue.push({ username, payload })
-    
 
     if (payload === "vegetable" || payload === "medicine") {
         insertCategory(payload, username)
     } else if (payload.length === 10 && isNaN(+payload) === false) {
         insertMobileNumber(payload, username)
     }
+
+    let query = "select * from userinfo where username =" + "'" + username + "'"
+    pool.query(query, (err, results) => {
+        if (err) {
+            throw err
+        }
+        userResult = results.rows
+        console.log("userresult", userResult)
+        if (userResult.length === 0) {
+            idx = 1
+            let workflow = JSON.stringify({ flowId: "28", idx })
+            insertNewUser(username, workflow)
+        } else {
+            idx = userResult[0].workflows.idx
+            console.log("idx", idx)
+        }
+    })
+
+    if (taskArr.length > 0) {
+        task.stop()
+    }
+
+    taskArr.push(task)
+
+    task = cron.schedule("*/8 * * * * *", async () => {
+        // console.log("running cron every 6 second")
+
+        for (idx; idx <= 13; nodeProgress ? idx++ : idx) {
+            await sleep(2000)
+            let workflow = JSON.stringify({ flowId: "28", idx: idx - 1 })
+            updateUser(username, workflow)
+            if (idx === 1) {
+                console.log("api started", username)
+            } else if (idx === 2) {
+                console.log("condition started", username)
+                console.log("checking user status", username)
+
+                // wait for user status api
+            } else if (idx === 3) {
+                // api failed
+
+            } else if (idx === 4) {
+                // new user text node
+                if (userResult.length === 0) {
+                    console.log("Welcome to our platform 😃", username)
+                    nodeProgress = true
+                }
+            } else if (idx === 5) {
+                // existing user text node
+                if (userResult.length !== 0) {
+                    console.log('Welcome back, existing user', username)
+                    nodeProgress = true
+                }
+            } else if (idx === 6) {
+                // ask for phone number
+                if (userMobileNumber === "" || userMobileNumber === null) {
+                    console.log("Please provide phone number...", username)
+                    nodeProgress = false
+                }
+                else {
+                    nodeProgress = true
+                }
+                // wait for customer
+            } else if (idx === 7) {
+                // send category 
+                if (selectedCategory === "" || selectedCategory === null) {
+                    console.log("Please chose either vegetable or medicine", username)
+                    nodeProgress = false
+                } else {
+                    nodeProgress = true
+                }
+
+                // wait for customer to click
+            } else if (idx === 8) {
+                // condition check for customer click 
+                console.log(selectedCategory);
+                if (selectedCategory === "vegetable") {
+                    console.log("Vegetable list : \n 1. Potato \n 2. Tomato \n 3. Onion")
+                    nodeProgress = true
+                } else if (selectedCategory === "medicine") {
+                    console.log("Medicine list : \n 1. Paracetamol \n 2. Serodon \n 3. Disprin")
+                    nodeProgress = true
+                }
+            } else if (idx === 9) {
+                // template failed
+                nodeProgress = true
+            } else if (idx === 10) {
+                // send vegetable acc to customer
+                nodeProgress = true
+            } else if (idx === 11) {
+                // send medicines acc to customer
+                nodeProgress = true
+            } else if (idx === 12) {
+                // template failed
+                console.log("end of workflow")
+            }
+
+
+        }
+    })
+
+    messageQue.pop()
+
     response.json({ msg: "message received" })
 }
+
+
 
 const insertMobileNumber = (mobileNumber, username) => {
     let query = "UPDATE userinfo SET usermobilenumber =" + "'" + mobileNumber + "'" + "WHERE username =" + "'" + username + "'" + "RETURNING usermobilenumber"
