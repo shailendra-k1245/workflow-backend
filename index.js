@@ -29,10 +29,9 @@ app.post("/addWorkflow", db.addWorkflow)
 app.get("/allWorkflows", db.getAllWorkflows)
 
 app.post("/runWorkflowByOrder", db.runWorkflowByOrder)
-app.post("/setPhoneNumber", db.setPhoneNumber)
-app.post("/setCategory", db.setCategory)
-app.post("/testCron", db.testCron)
+app.post("/takeUserInput", db.takeUserInput)
 app.post("/abortWorkflow", db.abortWorkflow)
+
 
 app.listen(port, () => {
     console.log(`Listening on port ${port}`);
