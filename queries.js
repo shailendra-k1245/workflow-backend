@@ -7,7 +7,7 @@ const pool = new Pool({
     port: 5432
 })
 
-
+const { v4: uuidv4 } = require('uuid');
 const cron = require("node-cron")
 let nodeProgress = true
 let selectedCategory = ""
@@ -16,6 +16,7 @@ let userStatus = ""
 let taskArr = []
 var messageQue = []
 var task
+let timeCounter = 0
 
 
 const sleep = (time) => {
@@ -70,6 +71,7 @@ const addWorkflow = (request, response) => {
 const runWorkflowByOrder = async (request, response) => {
     const { idx, nodes, edges, workflowname } = request.body
     //take workflow id as 28
+
     let idxWorkflow
     userStatus = ""
     userMobileNumber = ""
@@ -82,18 +84,26 @@ const runWorkflowByOrder = async (request, response) => {
     if (taskArr.length > 0) {
         task.stop()
     }
-    let timeCounter = 0;
+    timeCounter = 0;
+
 
     task = cron.schedule("*/6 * * * * *", async () => {
 
         // console.log("running cron every 6 second", nodeProgress)
         //also print userStatus in above console
 
-
-
         if (messageQue.length > 0) {
             username = messageQue[0].username
             timeCounter += 6
+            if (timeCounter >= 180 || idxWorkflow === 13) {
+                terminateWorkflowStatusByUsernameIdx(username, idxWorkflow)
+                return
+            }
+
+            if (nodeProgress === true) {
+                timeCounter = 0
+            }
+
             let query = "select * from userinfo where username =" + "'" + username + "'"
             pool.query(query, (err, results) => {
                 if (err) {
@@ -152,6 +162,7 @@ const runWorkflowByOrder = async (request, response) => {
                         nodeProgress = true
                     }
                 } else if (idxWorkflow === 6) {
+
                     // ask for phone number
                     if (userMobileNumber === "" || userMobileNumber === null) {
                         if (timeCounter % 60 === 0) {
@@ -247,6 +258,16 @@ const updateWorkflowStatus = (username, workflowId, idx) => {
     })
 }
 
+const terminateWorkflowStatusByUsernameIdx = (username, idx) => {
+    let query = "update workflowstatus set status='terminated' where username=" + "'" + username + "'" + "and idx =" + "'" + idx + "'"
+    pool.query(query, (err, results) => {
+        if (err) {
+            throw err
+        }
+    })
+
+}
+
 const getNodesOrder = (n, e) => {
     // console.log(nodes, edges)
     let nodes = n
@@ -332,8 +353,19 @@ const insertCategory = (category, username) => {
 
 
 const abortWorkflow = (request, response) => {
+    const { id } = request.body
+    terminateWorkflowById(id)
     task.stop()
     response.json({ msg: "workflow stopped" })
+}
+
+const terminateWorkflowById = (id) => {
+    let query = "update workflowstatus set status='terminated' where id=" + "'" + id + "'"
+    pool.query(query, (err, results) => {
+        if (err) {
+            throw err
+        }
+    })
 }
 
 module.exports = {
