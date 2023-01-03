@@ -91,17 +91,18 @@ const runWorkflowByOrder = async (request, response) => {
 
         // console.log("running cron every 6 second", nodeProgress)
         //also print userStatus in above console
-
+        console.log("timeCounter : ", timeCounter)
         if (messageQue.length > 0) {
             username = messageQue[0].username
             timeCounter += 6
-            if (timeCounter >= 180 || idxWorkflow === 13) {
+
+            if (timeCounter >= 120 || idxWorkflow === 13) {
                 terminateWorkflowStatusByUsernameIdx(username, idxWorkflow)
-                return
             }
 
             if (nodeProgress === true) {
                 timeCounter = 0
+                activateWorkflowStatus(username, idxWorkflow)
             }
 
             let query = "select * from userinfo where username =" + "'" + username + "'"
@@ -122,7 +123,7 @@ const runWorkflowByOrder = async (request, response) => {
                     } else if (userinfo.length > 0) {
 
                         idxWorkflow = userinfo[0].workflows.idx
-                        console.log("idxworkflow set", idxWorkflow)
+                        // console.log("idxworkflow set", idxWorkflow)
                         nodeProgress = true
                         userMobileNumber = userinfo[0].usermobilenumber
                         selectedCategory = userinfo[0].selectedcategory
@@ -165,10 +166,10 @@ const runWorkflowByOrder = async (request, response) => {
 
                     // ask for phone number
                     if (userMobileNumber === "" || userMobileNumber === null) {
-                        if (timeCounter % 60 === 0) {
+                        nodeProgress = false
+                        if (timeCounter % 60 === 0 && timeCounter < 120) {
                             console.log(username, "Please provide phone number...")
                         }
-                        nodeProgress = false
                     }
                     else {
                         nodeProgress = true
@@ -177,7 +178,9 @@ const runWorkflowByOrder = async (request, response) => {
                 } else if (idxWorkflow === 7) {
                     // send category 
                     if (selectedCategory === "" || selectedCategory === null) {
-                        console.log(username, "Please chose either vegetable or medicine")
+                        if (timeCounter % 60 === 0 && timeCounter < 120) {
+                            console.log(username, "Please chose either vegetable or medicine")
+                        }
                         nodeProgress = false
                     } else {
                         nodeProgress = true
@@ -218,9 +221,9 @@ const runWorkflowByOrder = async (request, response) => {
     response.json({ message: "Workflow started" })
 }
 
-
 const takeUserInput = (request, response) => {
     const { username, payload } = request.body
+    timeCounter = 0
     if (messageQue.length > 0) {
         messageQue.pop()
     }
@@ -231,6 +234,7 @@ const takeUserInput = (request, response) => {
     if (payload === "vegetable" || payload === "medicine") {
         insertCategory(payload, username)
         nodeProgress = true
+
     } else if (payload.length === 10 && isNaN(+payload) === false) {
         insertMobileNumber(payload, username)
         nodeProgress = true
@@ -266,6 +270,16 @@ const terminateWorkflowStatusByUsernameIdx = (username, idx) => {
         }
     })
 
+}
+
+const activateWorkflowStatus = (username, idx) => {
+    timeCounter = 0
+    let query = "update workflowstatus set status='active' where username=" + "'" + username + "'" + "and idx =" + "'" + idx + "'"
+    pool.query(query, (err, results) => {
+        if (err) {
+            throw err
+        }
+    })
 }
 
 const getNodesOrder = (n, e) => {
@@ -355,7 +369,9 @@ const insertCategory = (category, username) => {
 const abortWorkflow = (request, response) => {
     const { id } = request.body
     terminateWorkflowById(id)
-    task.stop()
+    if (task) {
+        task.stop()
+    }
     response.json({ msg: "workflow stopped" })
 }
 
