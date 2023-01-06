@@ -7,16 +7,16 @@ const pool = new Pool({
     port: 5432
 })
 
-const { v4: uuidv4 } = require('uuid');
+
 const cron = require("node-cron")
 let nodeProgress = true
 let selectedCategory = ""
 let userMobileNumber = ""
-let userStatus = ""
 let taskArr = []
 var messageQue = []
 var task
 let timeCounter = 0
+let step = 0
 
 
 const sleep = (time) => {
@@ -73,7 +73,7 @@ const runWorkflowByOrder = async (request, response) => {
     //take workflow id as 28
 
     let idxWorkflow
-    userStatus = ""
+    let userStatus = ""
     userMobileNumber = ""
     // selectedCategory = ""
     let userinfo = []
@@ -90,17 +90,18 @@ const runWorkflowByOrder = async (request, response) => {
     task = cron.schedule("*/6 * * * * *", async () => {
 
         // console.log("running cron every 6 second", nodeProgress)
-        //also print userStatus in above console
-        console.log("timeCounter : ", timeCounter)
+
+        console.log("timeCounter : ", timeCounter, nodeProgress, idxWorkflow)
         if (messageQue.length > 0) {
             username = messageQue[0].username
             timeCounter += 6
 
-            if (timeCounter >= 120 || idxWorkflow === 13) {
+            if (timeCounter >= 60 || idxWorkflow === 13) {
                 terminateWorkflowStatusByUsernameIdx(username, idxWorkflow)
             }
 
             if (nodeProgress === true) {
+                // console.log("inside activated", nodeProgress)
                 timeCounter = 0
                 activateWorkflowStatus(username, idxWorkflow)
             }
@@ -115,7 +116,7 @@ const runWorkflowByOrder = async (request, response) => {
                         userStatus = "new"
                         idxWorkflow = 1
                         nodeProgress = true
-                        console.log("inserted new value");
+                        // console.log("inserted new value", messageQue[0].payload);
                         let workflow = JSON.stringify({ flowId: 28, idx })
                         insertNewUser(username, workflow)
                         let args = { username, workflowId: "28", status: "active", idx }
@@ -133,10 +134,9 @@ const runWorkflowByOrder = async (request, response) => {
                     }
                 }
             })
-
-
             for (idxWorkflow; idxWorkflow <= nodesOrder.length; nodeProgress ? idxWorkflow++ : idxWorkflow) {
                 await sleep(2000)
+                step = idxWorkflow
                 let workflow = JSON.stringify({ flowId: 28, idx: idxWorkflow })
                 updateUser(username, workflow)
                 updateWorkflowStatus(username, "28", idxWorkflow)
@@ -159,27 +159,30 @@ const runWorkflowByOrder = async (request, response) => {
                 } else if (idxWorkflow === 5) {
                     // existing user text node
                     if (userStatus === 'old') {
-                        console.log(username, 'Welcome back, existing user')
+                        console.log(username, 'Welcome to our platform')
                         nodeProgress = true
                     }
                 } else if (idxWorkflow === 6) {
-
+                    console.log("inside step 6", messageQue[0]);
                     // ask for phone number
+                    // let message = validatePhonenumber(messageQue[0].payload)
                     if (userMobileNumber === "" || userMobileNumber === null) {
                         nodeProgress = false
-                        if (timeCounter % 60 === 0 && timeCounter < 120) {
+                        if (timeCounter % 30 === 0 && timeCounter <= 60) {
                             console.log(username, "Please provide phone number...")
                         }
                     }
                     else {
                         nodeProgress = true
                     }
+
                     // wait for customer
                 } else if (idxWorkflow === 7) {
-                    // send category 
+                    // send category template
+
                     if (selectedCategory === "" || selectedCategory === null) {
-                        if (timeCounter % 60 === 0 && timeCounter < 120) {
-                            console.log(username, "Please chose either vegetable or medicine")
+                        if (timeCounter % 30 === 0 && timeCounter <= 60) {
+                            console.log(username, "Please choose either vegetable , medicine or groceries")
                         }
                         nodeProgress = false
                     } else {
@@ -196,6 +199,9 @@ const runWorkflowByOrder = async (request, response) => {
                     } else if (selectedCategory === "medicine") {
                         console.log(username, "Medicine list : \n 1. Paracetamol \n 2. Serodon \n 3. Disprin")
                         nodeProgress = true
+                    } else if (selectedCategory === "groceries") {
+                        console.log(username, "Groceries list : \n 1. Cereal \n 2.Sugar \n 3. Rice")
+                        nodeProgress = true
                     }
                 } else if (idxWorkflow === 9) {
                     // template failed
@@ -205,14 +211,21 @@ const runWorkflowByOrder = async (request, response) => {
                     nodeProgress = true
                 } else if (idxWorkflow === 11) {
                     // send medicines acc to customer
+
                     nodeProgress = true
                 } else if (idxWorkflow === 12) {
                     // template failed
-                    console.log(username, "end of workflow")
+
+                    nodeProgress = true
+                    console.log(username, "Thanks for shopping with us")
+                    workflow = JSON.stringify({ flowId: "28", idx: "1" })
+                    updateUser(username, workflow)
+                    updateWorkflowStatus(username, "28", "1")
+                    updateCategory(username)
+                    // messageQue.pop()
                 }
             }
         }
-
     })
 
     taskArr.push(task)
@@ -224,22 +237,49 @@ const runWorkflowByOrder = async (request, response) => {
 const takeUserInput = (request, response) => {
     const { username, payload } = request.body
     timeCounter = 0
+    console.log("step", step)
     if (messageQue.length > 0) {
         messageQue.pop()
     }
+    activateWorkflowStatus(username)
 
     messageQue.push({ username, payload })
 
-
-    if (payload === "vegetable" || payload === "medicine") {
-        insertCategory(payload, username)
-        nodeProgress = true
-
-    } else if (payload.length === 10 && isNaN(+payload) === false) {
-        insertMobileNumber(payload, username)
-        nodeProgress = true
+    if (step === 6) {
+        if (validatePhonenumber(payload) === true) {
+            insertMobileNumber(payload, username)
+            nodeProgress = true
+        } else {
+            console.log("Please provide valid number")
+        }
     }
+    if (step === 7) {
+        if (validateCategory(payload) === true) {
+            insertCategory(payload, username)
+            nodeProgress = true
+        } else {
+            console.log("Please provide a valid category name")
+        }
+    }
+
     response.json({ msg: "message received" })
+}
+
+const validatePhonenumber = (number) => {
+    if (number.length === 10 && isNaN(+number) === false) {
+        nodeProgress = true
+        // return "Phone number set"
+        return true
+    }
+    return false
+    // return "Please provide valid number"
+}
+
+const validateCategory = (category) => {
+    if (category === "vegetable" || category === "medicine" || category === "groceries") {
+        return true
+    }
+    return false
 }
 
 const insertWorkflowStatus = (args) => {
@@ -272,9 +312,23 @@ const terminateWorkflowStatusByUsernameIdx = (username, idx) => {
 
 }
 
+const updateCategory = (username) => {
+    let query = "update userinfo set selectedcategory = null where username=" + "'" + username + "'"
+    pool.query(query, (err, results) => {
+        if (err) {
+            throw err
+        }
+    })
+}
+
 const activateWorkflowStatus = (username, idx) => {
     timeCounter = 0
-    let query = "update workflowstatus set status='active' where username=" + "'" + username + "'" + "and idx =" + "'" + idx + "'"
+    let query = ""
+    if (idx) {
+        query = "update workflowstatus set status='active' where username=" + "'" + username + "'" + "and idx =" + "'" + idx + "'"
+    } else {
+        query = "update workflowstatus set status='active' where username=" + "'" + username + "'"
+    }
     pool.query(query, (err, results) => {
         if (err) {
             throw err
